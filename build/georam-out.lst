@@ -1,5 +1,5 @@
 Sections:
-00: "org0001:c000" (C000-C1EB)
+00: "org0001:c000" (C000-C203)
 
 
 Source: "src/georam-out.asm"
@@ -16,14 +16,14 @@ Source: "src/georam-out.asm"
                         	    11:         ;;
                         	    12:         ;; Usage:
                         	    13:         ;; ------
-                        	    14:         ;; Set GEOram starting block:
-                        	    15:         ;;   SYS(49152) 0
+                        	    14:         ;; Set GEOram starting block & page:
+                        	    15:         ;;   SYS(49152) 0,2 REM BLOCK 0, PAGE 2
                         	    16:         ;; 
                         	    17:         ;; Assemble to GEOram:
-                        	    18:         ;;   .OPT P,O=$C020
+                        	    18:         ;;   .OPT P,O=$C030
                         	    19:         ;; 
                         	    20:         ;; Copy object code from GEOram to C64 memory:
-                        	    21:         ;;   SYS49328
+                        	    21:         ;;   SYS49344
                         	    22: 
                         	    23:         ;; Constants
                         	    24: PA_START:       .equ $80        ;pa_len value indicating start of assembly
@@ -35,335 +35,353 @@ Source: "src/georam-out.asm"
                         	    30: newline:        .equ $aad7      ;print CRLF        
                         	    31: strout:         .equ $ab1e      ;print 0 terminated string in A (lo) and Y (hi)
                         	    32: frmnum:         .equ $ad8a      ;eval numeric expression
-                        	    33: facwrd:         .equ $b7f7      ;convert FAC #1 to word at linnum
-                        	    34: illqua:         .equ $b248      ;routine to trigger illegal quantity error
-                        	    35: linprt:         .equ $bdcd      ;print 16-bit integer in X (lo) and A (hi)
-                        	    36:         
-                        	    37:         ;; OS memory
-                        	    38: linnum:         .ezp $14        ;variable to store BASIC line number
-                        	    39:         
-                        	    40:         ;; GEOram registers
-                        	    41: georam:         .equ $de00      ;first address mapped to GEOram
-                        	    42: geoblock:       .equ $dfff      ;16K GEOram block selection register
-                        	    43: geopage:        .equ $dffe      ;GEOram page selection register
-                        	    44: 
-                        	    45:         ;; Profi-Ass variables to read
-                        	    46: pa_op:          .ezp $4b        ;BYTEx3 buffer containing first 3 bytes
-                        	    47: pa_len:         .ezp $4e        ;BYTE number of bytes to emit -1
-                        	    48: pa_adr:         .ezp $56        ;WORD object code starting address
-                        	    49: pa_buf:         .equ $015b      ;buffer for remaining bytes beyond first 3
-                        	    50: 
-                        	    51:         ;; Working memory
-                        	    52: datalen:        .ezp $a3        ;WORD total bytes written or left to copy
-                        	    53: curblock:       .ezp $a5        ;BYTE current GEOram block (0-31)
-                        	    54: curpage:        .ezp $a6        ;BYTE current GEOram page (0-63)
-                        	    55: offset:         .ezp $a7        ;BYTE offset within page ($00-$ff)
-                        	    56: c64addr:        .ezp $a7        ;WORD address to copy to in C64 main memory
-                        	    57: first_block:    .ezp $a8        ;BYTE first GEOram block to write to / copy from
-                        	    58: 
-                        	    59:         ;; Set number of first block from user input.
-                        	    60:         ;; Call from BASIC via SYS.
-                        	    61:         ;; ------------------------------------------
-                        	    62:         .org $c000
-                        	    63: set_block:
-00:C000 208BC1          	    64:         jsr getwrd
-00:C003 A515            	    65:         lda linnum+1
-00:C005 D009            	    66:         bne iqerr
-00:C007 A514            	    67:         lda linnum
-00:C009 C920            	    68:         cmp #MAX_BLOCK
-00:C00B B003            	    69:         bcs iqerr        
-00:C00D 85A8            	    70:         sta first_block
-00:C00F 60              	    71:         rts
-00:C010 4C48B2          	    72: iqerr:  jmp illqua
-                        	    73:         
-                        	    74:         ;; Write object code to GEOram.
-                        	    75:         ;; Called by Profi-Ass.
-                        	    76:         ;; ----------------------------
-                        	    77:         .align 4
-00:C020 A54E            	    78: write:  lda pa_len
-00:C022 C9C0            	    79:         cmp #PA_STOP
-00:C024 F060            	    80:         beq finwrt
-00:C026 C980            	    81:         cmp #PA_START
-00:C028 F048            	    82:         beq start
-00:C02A A000            	    83:         ldy #0
-00:C02C A6A7            	    84:         ldx offset
-00:C02E B94B00          	    85: out:    lda pa_op,y
-00:C031 9D00DE          	    86: out1:   sta georam,x
-00:C034 2015C1          	    87:         jsr inc_datalen          ;increment total bytes written
-00:C037 E8              	    88:         inx
-00:C038 7011            	    89:         bvs nextpage            ;overflow? next page!
-00:C03A 86A7            	    90:         stx offset
-00:C03C C44E            	    91: chklen: cpy pa_len
-00:C03E F045            	    92:         beq return
-00:C040 C8              	    93:         iny
-00:C041 C003            	    94:         cpy #3
-00:C043 90E9            	    95:         bcc out
-00:C045 B95801          	    96:         lda pa_buf-3,y
-00:C048 4C31C0          	    97:         jmp out1
-                        	    98: nextpage:
-00:C04B A200            	    99:         ldx #0
-00:C04D 86A7            	   100:         stx offset
-00:C04F E6A6            	   101:         inc curpage
-00:C051 A5A6            	   102:         lda curpage
-00:C053 C940            	   103:         cmp #MAX_PAGE
-00:C055 F006            	   104:         beq nextblock           ;past page 63? next block!
-00:C057 8DFEDF          	   105:         sta geopage
-00:C05A 4C3CC0          	   106:         jmp chklen
-                        	   107: nextblock:
-00:C05D A900            	   108:         lda #0
-00:C05F 85A6            	   109:         sta curpage
-00:C061 8DFEDF          	   110:         sta geopage
-00:C064 E6A5            	   111:         inc curblock
-00:C066 A5A5            	   112:         lda curblock
-00:C068 C920            	   113:         cmp #MAX_BLOCK
-00:C06A F039            	   114:         beq enomem
-00:C06C 8DFFDF          	   115:         sta geoblock
-00:C06F 4C3CC0          	   116:         jmp chklen
-00:C072 20FEC0          	   117: start:  jsr init
-00:C075 A6A7            	   118:         ldx offset
-00:C077 A556            	   119:         lda pa_adr
-00:C079 9D00DE          	   120:         sta georam,x
-00:C07C E8              	   121:         inx
-00:C07D A557            	   122:         lda pa_adr+1
-00:C07F 9D00DE          	   123:         sta georam,x
-00:C082 E8              	   124:         inx
-00:C083 86A7            	   125:         stx offset
-00:C085 60              	   126: return: rts        
-                        	   127:         ;; Write data length to first word in first block of GEOram
-00:C086 A5A8            	   128: finwrt: lda first_block
-00:C088 8DFFDF          	   129:         sta geoblock
-00:C08B 85A5            	   130:         sta curblock
-00:C08D A900            	   131:         lda #0
-00:C08F 8DFEDF          	   132:         sta geopage
-00:C092 85A6            	   133:         sta curpage
-00:C094 A200            	   134:         ldx #0
-00:C096 B5A3            	   135:         lda datalen,x
-00:C098 9D00DE          	   136:         sta georam,x
-00:C09B E8              	   137:         inx
-00:C09C B5A3            	   138:         lda datalen,x
-00:C09E 9D00DE          	   139:         sta georam,x
-00:C0A1 2023C1          	   140:         jsr print_write_summary
-00:C0A4 60              	   141:         rts
-00:C0A5 20D7AA          	   142: enomem: jsr newline
-00:C0A8 A9CF            	   143:         lda #<outofmem
-00:C0AA A0C1            	   144:         ldy #>outofmem
-00:C0AC 201EAB          	   145:         jsr strout
-00:C0AF 60              	   146:         rts
-                        	   147: 
-                        	   148:         ;; Copy object code from GEOram to C64.
-                        	   149:         ;; Call from BASIC via SYS.
-                        	   150:         ;; ------------------------------------
-                        	   151:         .align 4
-00:C0B0 20FEC0          	   152: read:   jsr init
-00:C0B3 2071C1          	   153:         jsr read_header
-00:C0B6 E8              	   154:         inx
-                        	   155:         ;; Copy loop
-00:C0B7 A000            	   156:         ldy #0
-00:C0B9 BD00DE          	   157: rloop:  lda georam,x
-00:C0BC 91A7            	   158:         sta (c64addr),y
-00:C0BE 2055C1          	   159:         jsr dec_datalen
-00:C0C1 A5A3            	   160:         lda datalen
-00:C0C3 F032            	   161:         beq fincpy
-00:C0C5 C8              	   162:         iny
-00:C0C6 7006            	   163:         bvs incadr
-00:C0C8 E8              	   164: chkpg:  inx
-00:C0C9 7009            	   165:         bvs nxpag
-00:C0CB 4CB9C0          	   166:         jmp rloop
-00:C0CE 2063C1          	   167: incadr: jsr inc_c64addr
-00:C0D1 4CC8C0          	   168:         jmp chkpg
-00:C0D4 E6A6            	   169: nxpag:  inc curpage
-00:C0D6 A5A6            	   170:         lda curpage
-00:C0D8 C940            	   171:         cmp #MAX_PAGE
-00:C0DA F006            	   172:         beq nxblk               ;past page 63? next block!
-00:C0DC 8DFEDF          	   173:         sta geopage
-00:C0DF 4CB9C0          	   174:         jmp rloop
-00:C0E2 A900            	   175: nxblk:  lda #0
-00:C0E4 85A6            	   176:         sta curpage
-00:C0E6 8DFEDF          	   177:         sta geopage
-00:C0E9 E6A5            	   178:         inc curblock
-00:C0EB A5A5            	   179:         lda curblock
-00:C0ED C920            	   180:         cmp #MAX_BLOCK
-00:C0EF F0B4            	   181:         beq enomem
-00:C0F1 8DFFDF          	   182:         sta geoblock
-00:C0F4 4CB9C0          	   183:         jmp rloop
-00:C0F7 2071C1          	   184: fincpy: jsr read_header
-00:C0FA 203CC1          	   185:         jsr print_copy_summary
-00:C0FD 60              	   186:         rts
-                        	   187:         
-                        	   188:         ;; Routine to initialize GEOram registers & working memory
-00:C0FE A5A8            	   189: init:   lda first_block
-00:C100 8DFFDF          	   190:         sta geoblock
-00:C103 85A5            	   191:         sta curblock
-00:C105 A900            	   192:         lda #0
-00:C107 8DFEDF          	   193:         sta geopage
-00:C10A 85A6            	   194:         sta curpage
-00:C10C 85A3            	   195:         sta datalen
-00:C10E 85A4            	   196:         sta datalen+1        
-00:C110 A902            	   197:         lda #2                  ;set offset to 2 to leave space for data length
-00:C112 85A7            	   198:         sta offset
-00:C114 60              	   199:         rts
-                        	   200:         
-                        	   201:         ;; Routine to increment data length
-                        	   202: inc_datalen:
-00:C115 18              	   203:         clc
-00:C116 A5A3            	   204:         lda datalen
-00:C118 6901            	   205:         adc #1
-00:C11A 85A3            	   206:         sta datalen
-00:C11C A5A4            	   207:         lda datalen+1
-00:C11E 6900            	   208:         adc #0
-00:C120 85A4            	   209:         sta datalen+1
-00:C122 60              	   210:         rts
-                        	   211: 
-                        	   212:         ;; Routine to print summary of data written
-                        	   213: print_write_summary:
-00:C123 20D7AA          	   214:         jsr newline
-00:C126 A6A3            	   215:         ldx datalen
-00:C128 A5A4            	   216:         lda datalen+1
-00:C12A 20CDBD          	   217:         jsr linprt
-00:C12D A991            	   218:         lda #<write_summary
-00:C12F A0C1            	   219:         ldy #>write_summary
-00:C131 201EAB          	   220:         jsr strout
-00:C134 A6A5            	   221:         ldx curblock
-00:C136 A900            	   222:         lda #0
-00:C138 20CDBD          	   223:         jsr linprt
-00:C13B 60              	   224:         rts
-                        	   225: 
-                        	   226:         ;; Routine to print summary of data copied
-                        	   227: print_copy_summary:
-00:C13C 20D7AA          	   228:         jsr newline
-00:C13F A6A3            	   229:         ldx datalen
-00:C141 A5A4            	   230:         lda datalen+1
-00:C143 20CDBD          	   231:         jsr linprt
-00:C146 A9B1            	   232:         lda #<copy_summary
-00:C148 A0C1            	   233:         ldy #>copy_summary
-00:C14A 201EAB          	   234:         jsr strout
-00:C14D A6A7            	   235:         ldx c64addr
-00:C14F A5A8            	   236:         lda c64addr+1
-00:C151 20CDBD          	   237:         jsr linprt
-00:C154 60              	   238:         rts
-                        	   239: 
-                        	   240:         ;; Routine to decrement data length
-                        	   241: dec_datalen:
-00:C155 38              	   242:         sec
-00:C156 A5A3            	   243:         lda datalen
-00:C158 E901            	   244:         sbc #1
-00:C15A 85A3            	   245:         sta datalen
-00:C15C A5A4            	   246:         lda datalen+1
-00:C15E E900            	   247:         sbc #0
-00:C160 85A4            	   248:         sta datalen+1
-00:C162 60              	   249:         rts
-                        	   250: 
-                        	   251:         ;; Routine to increment C64 address
-                        	   252: inc_c64addr:
-00:C163 18              	   253:         clc
-00:C164 A5A7            	   254:         lda c64addr
-00:C166 6901            	   255:         adc #1
-00:C168 85A7            	   256:         sta c64addr
-00:C16A A5A8            	   257:         lda c64addr+1
-00:C16C 6900            	   258:         adc #0
-00:C16E 85A8            	   259:         sta c64addr+1
-00:C170 60              	   260:         rts
-                        	   261: 
-                        	   262:         ;; Routine to read data length & C64 address from GEOram
-                        	   263: read_header:
-00:C171 A200            	   264:         ldx #0
-                        	   265:         ;; Read data length
-00:C173 BD00DE          	   266:         lda georam,x
-00:C176 85A3            	   267:         sta datalen
-00:C178 E8              	   268:         inx
-00:C179 BD00DE          	   269:         lda georam,x
-00:C17C 85A4            	   270:         sta datalen+1
-00:C17E E8              	   271:         inx
-                        	   272:         ;; Read C64 address
-00:C17F BD00DE          	   273:         lda georam,x
-00:C182 85A7            	   274:         sta c64addr
-00:C184 E8              	   275:         inx
-00:C185 BD00DE          	   276:         lda georam,x
-00:C188 85A8            	   277:         sta c64addr+1
-00:C18A 60              	   278:         rts
-                        	   279: 
-                        	   280:         ;; Read word from BASIC
-00:C18B 208AAD          	   281: getwrd: jsr frmnum
-00:C18E 4CF7B7          	   282:         jmp facwrd
-                        	   283:         
-                        	   284: write_summary:
-00:C191 2042595445532057	   285:         .string " BYTES WRITTEN TO GEORAM BLOCK "
-00:C199 52495454454E2054
-00:C1A1 4F2047454F52414D
-00:C1A9 20424C4F434B20
-00:C1B0 00
-                        	   286: 
-                        	   287: copy_summary:
-00:C1B1 2042595445532043	   288:         .string " BYTES COPIED FROM GEORAM TO "
-00:C1B9 4F50494544204652
-00:C1C1 4F4D2047454F5241
-00:C1C9 4D20544F20
-00:C1CE 00
-                        	   289: 
-                        	   290: outofmem:
-00:C1CF 4552524F523A2047	   291:         .string "ERROR: GEORAM OUT OF MEMORY"
-00:C1D7 454F52414D204F55
-00:C1DF 54204F46204D454D
-00:C1E7 4F5259
-00:C1EA 00
-                        	   292: 
+                        	    33: comma:          .equ $aefd      ;detect comma in BASIC line
+                        	    34: facwrd:         .equ $b7f7      ;convert FAC #1 to word at linnum
+                        	    35: illqua:         .equ $b248      ;routine to trigger illegal quantity error
+                        	    36: linprt:         .equ $bdcd      ;print 16-bit integer in X (lo) and A (hi)
+                        	    37: chrout:         .equ $ffd2      ;print a character in A
+                        	    38:         
+                        	    39:         ;; OS memory
+                        	    40: linnum:         .ezp $14        ;variable to store BASIC line number
+                        	    41:         
+                        	    42:         ;; GEOram registers
+                        	    43: georam:         .equ $de00      ;PAGE first address of page mapped to GEOram
+                        	    44: geopage:        .equ $dffe      ;BYTE GEOram page selection register
+                        	    45: geoblock:       .equ $dfff      ;BYTE 16K GEOram block selection register
+                        	    46: 
+                        	    47:         ;; Profi-Ass variables to read
+                        	    48: pa_op:          .ezp $4b        ;BYTEx3 buffer containing first 3 bytes
+                        	    49: pa_len:         .ezp $4e        ;BYTE number of bytes to emit -1
+                        	    50: pa_adr:         .ezp $56        ;WORD object code starting address
+                        	    51: pa_buf:         .equ $015b      ;buffer for remaining bytes beyond first 3
+                        	    52: 
+                        	    53:         ;; Working memory
+                        	    54: datalen:        .ezp $a3        ;WORD total bytes written or left to copy
+                        	    55: curpage:        .ezp $a5        ;BYTE current GEOram page (0-63)        
+                        	    56: curblock:       .ezp $a6        ;BYTE current GEOram block (0-31)
+                        	    57: offset:         .ezp $a7        ;BYTE offset within page ($00-$ff)
+                        	    58: c64addr:        .ezp $a7        ;WORD address to copy to in C64 main memory
+                        	    59: firstpage:      .ezp $a8        ;BYTE first GEORAM page to write to / copy from
+                        	    60: firstblock:     .ezp $a9        ;BYTE first GEOram block to write to / copy from
+                        	    61: 
+                        	    62:         ;; Set first block and page from user input.
+                        	    63:         ;; Call from BASIC via SYS.
+                        	    64:         ;; ------------------------------------------
+                        	    65:         .org $c000
+                        	    66: setfirst:
+00:C000 20A9C1          	    67:         jsr getwrd
+00:C003 A515            	    68:         lda linnum+1
+00:C005 D01B            	    69:         bne iqerr
+00:C007 A514            	    70:         lda linnum
+00:C009 C920            	    71:         cmp #MAX_BLOCK
+00:C00B B015            	    72:         bcs iqerr
+00:C00D 85A9            	    73:         sta firstblock
+00:C00F 20FDAE          	    74:         jsr comma
+00:C012 20A9C1          	    75:         jsr getwrd
+00:C015 A515            	    76:         lda linnum+1
+00:C017 D009            	    77:         bne iqerr
+00:C019 A514            	    78:         lda linnum
+00:C01B C940            	    79:         cmp #MAX_PAGE
+00:C01D B003            	    80:         bcs iqerr
+00:C01F 85A8            	    81:         sta firstpage
+00:C021 60              	    82:         rts
+00:C022 4C48B2          	    83: iqerr:  jmp illqua
+                        	    84:         
+                        	    85:         ;; Write object code to GEOram.
+                        	    86:         ;; Called by Profi-Ass.
+                        	    87:         ;; ----------------------------
+                        	    88:         .align 4
+00:C030 A54E            	    89: write:  lda pa_len
+00:C032 C9C0            	    90:         cmp #PA_STOP
+00:C034 F060            	    91:         beq finwrt
+00:C036 C980            	    92:         cmp #PA_START
+00:C038 F048            	    93:         beq start
+00:C03A A000            	    94:         ldy #0
+00:C03C A6A7            	    95:         ldx offset
+00:C03E B94B00          	    96: out:    lda pa_op,y
+00:C041 9D00DE          	    97: out1:   sta georam,x
+00:C044 2027C1          	    98:         jsr inc_datalen         ;increment total bytes written
+00:C047 E8              	    99:         inx
+00:C048 7011            	   100:         bvs nextpage            ;overflow? next page!
+00:C04A 86A7            	   101:         stx offset
+00:C04C C44E            	   102: chklen: cpy pa_len
+00:C04E F045            	   103:         beq return
+00:C050 C8              	   104:         iny
+00:C051 C003            	   105:         cpy #3
+00:C053 90E9            	   106:         bcc out
+00:C055 B95801          	   107:         lda pa_buf-3,y
+00:C058 4C41C0          	   108:         jmp out1
+                        	   109: nextpage:
+00:C05B A200            	   110:         ldx #0
+00:C05D 86A7            	   111:         stx offset
+00:C05F E6A5            	   112:         inc curpage
+00:C061 A5A5            	   113:         lda curpage
+00:C063 C940            	   114:         cmp #MAX_PAGE
+00:C065 F006            	   115:         beq nextblock           ;past page 63? next block!
+00:C067 8DFEDF          	   116:         sta geopage
+00:C06A 4C4CC0          	   117:         jmp chklen
+                        	   118: nextblock:
+00:C06D A900            	   119:         lda #0
+00:C06F 85A5            	   120:         sta curpage
+00:C071 8DFEDF          	   121:         sta geopage
+00:C074 E6A6            	   122:         inc curblock
+00:C076 A5A6            	   123:         lda curblock
+00:C078 C920            	   124:         cmp #MAX_BLOCK          ;past page 31? out of memory!
+00:C07A F036            	   125:         beq enomem
+00:C07C 8DFFDF          	   126:         sta geoblock
+00:C07F 4C4CC0          	   127:         jmp chklen
+00:C082 200EC1          	   128: start:  jsr init
+00:C085 A6A7            	   129:         ldx offset
+00:C087 A556            	   130:         lda pa_adr
+00:C089 9D00DE          	   131:         sta georam,x
+00:C08C E8              	   132:         inx
+00:C08D A557            	   133:         lda pa_adr+1
+00:C08F 9D00DE          	   134:         sta georam,x
+00:C092 E8              	   135:         inx
+00:C093 86A7            	   136:         stx offset
+00:C095 60              	   137: return: rts        
+                        	   138:         ;; Write data length to first block & page of GEOram
+00:C096 A5A9            	   139: finwrt: lda firstblock
+00:C098 8DFFDF          	   140:         sta geoblock
+00:C09B 85A6            	   141:         sta curblock
+00:C09D A5A8            	   142:         lda firstpage
+00:C09F 8DFEDF          	   143:         sta geopage
+00:C0A2 85A5            	   144:         sta curpage
+00:C0A4 A5A3            	   145:         lda datalen
+00:C0A6 8D00DE          	   146:         sta georam
+00:C0A9 A5A4            	   147:         lda datalen+1
+00:C0AB 8D01DE          	   148:         sta georam+1
+00:C0AE 2035C1          	   149:         jsr print_write_summary
+00:C0B1 60              	   150:         rts
+00:C0B2 20D7AA          	   151: enomem: jsr newline
+00:C0B5 A9E7            	   152:         lda #<outofmem
+00:C0B7 A0C1            	   153:         ldy #>outofmem
+00:C0B9 201EAB          	   154:         jsr strout
+00:C0BC 60              	   155:         rts
+                        	   156: 
+                        	   157:         ;; Copy object code from GEOram to C64.
+                        	   158:         ;; Call from BASIC via SYS.
+                        	   159:         ;; ------------------------------------
+                        	   160:         .align 4
+00:C0C0 200EC1          	   161: read:   jsr init
+00:C0C3 208FC1          	   162:         jsr read_header
+00:C0C6 E8              	   163:         inx
+                        	   164:         ;; Copy loop
+00:C0C7 A000            	   165:         ldy #0
+00:C0C9 BD00DE          	   166: rloop:  lda georam,x
+00:C0CC 91A7            	   167:         sta (c64addr),y
+00:C0CE 2073C1          	   168:         jsr dec_datalen
+00:C0D1 A5A3            	   169:         lda datalen
+00:C0D3 F032            	   170:         beq fincpy
+00:C0D5 C8              	   171:         iny
+00:C0D6 7006            	   172:         bvs incadr
+00:C0D8 E8              	   173: chkpg:  inx
+00:C0D9 7009            	   174:         bvs nxpag
+00:C0DB 4CC9C0          	   175:         jmp rloop
+00:C0DE 2081C1          	   176: incadr: jsr inc_c64addr
+00:C0E1 4CD8C0          	   177:         jmp chkpg
+00:C0E4 E6A5            	   178: nxpag:  inc curpage
+00:C0E6 A5A5            	   179:         lda curpage
+00:C0E8 C940            	   180:         cmp #MAX_PAGE
+00:C0EA F006            	   181:         beq nxblk               ;past page 63? next block!
+00:C0EC 8DFEDF          	   182:         sta geopage
+00:C0EF 4CC9C0          	   183:         jmp rloop
+00:C0F2 A900            	   184: nxblk:  lda #0
+00:C0F4 85A5            	   185:         sta curpage
+00:C0F6 8DFEDF          	   186:         sta geopage
+00:C0F9 E6A6            	   187:         inc curblock
+00:C0FB A5A6            	   188:         lda curblock
+00:C0FD C920            	   189:         cmp #MAX_BLOCK          ;past block 31? out of memory!
+00:C0FF F0B1            	   190:         beq enomem
+00:C101 8DFFDF          	   191:         sta geoblock
+00:C104 4CC9C0          	   192:         jmp rloop
+00:C107 208FC1          	   193: fincpy: jsr read_header
+00:C10A 205AC1          	   194:         jsr print_copy_summary
+00:C10D 60              	   195:         rts
+                        	   196:         
+                        	   197:         ;; Routine to initialize GEOram registers & working memory
+00:C10E A5A9            	   198: init:   lda firstblock
+00:C110 8DFFDF          	   199:         sta geoblock
+00:C113 85A6            	   200:         sta curblock
+00:C115 A5A8            	   201:         lda firstpage
+00:C117 8DFEDF          	   202:         sta geopage
+00:C11A 85A5            	   203:         sta curpage
+00:C11C A900            	   204:         lda #0
+00:C11E 85A3            	   205:         sta datalen
+00:C120 85A4            	   206:         sta datalen+1        
+00:C122 A902            	   207:         lda #2                  ;set offset to 2 to leave space for data length
+00:C124 85A7            	   208:         sta offset
+00:C126 60              	   209:         rts
+                        	   210:         
+                        	   211:         ;; Routine to increment data length
+                        	   212: inc_datalen:
+00:C127 18              	   213:         clc
+00:C128 A5A3            	   214:         lda datalen
+00:C12A 6901            	   215:         adc #1
+00:C12C 85A3            	   216:         sta datalen
+00:C12E A5A4            	   217:         lda datalen+1
+00:C130 6900            	   218:         adc #0
+00:C132 85A4            	   219:         sta datalen+1
+00:C134 60              	   220:         rts
+                        	   221: 
+                        	   222:         ;; Routine to print summary of data written
+                        	   223: print_write_summary:
+00:C135 20D7AA          	   224:         jsr newline
+00:C138 A6A3            	   225:         ldx datalen
+00:C13A A5A4            	   226:         lda datalen+1
+00:C13C 20CDBD          	   227:         jsr linprt
+00:C13F A9AF            	   228:         lda #<write_summary
+00:C141 A0C1            	   229:         ldy #>write_summary
+00:C143 201EAB          	   230:         jsr strout
+00:C146 A6A6            	   231:         ldx curblock
+00:C148 A900            	   232:         lda #0
+00:C14A 20CDBD          	   233:         jsr linprt
+00:C14D A92C            	   234:         lda #','
+00:C14F 20D2FF          	   235:         jsr chrout
+00:C152 A6A5            	   236:         ldx curpage
+00:C154 A900            	   237:         lda #0
+00:C156 20CDBD          	   238:         jsr linprt
+00:C159 60              	   239:         rts
+                        	   240: 
+                        	   241:         ;; Routine to print summary of data copied
+                        	   242: print_copy_summary:
+00:C15A 20D7AA          	   243:         jsr newline
+00:C15D A6A3            	   244:         ldx datalen
+00:C15F A5A4            	   245:         lda datalen+1
+00:C161 20CDBD          	   246:         jsr linprt
+00:C164 A9C9            	   247:         lda #<copy_summary
+00:C166 A0C1            	   248:         ldy #>copy_summary
+00:C168 201EAB          	   249:         jsr strout
+00:C16B A6A7            	   250:         ldx c64addr
+00:C16D A5A8            	   251:         lda c64addr+1
+00:C16F 20CDBD          	   252:         jsr linprt
+00:C172 60              	   253:         rts
+                        	   254: 
+                        	   255:         ;; Routine to decrement data length
+                        	   256: dec_datalen:
+00:C173 38              	   257:         sec
+00:C174 A5A3            	   258:         lda datalen
+00:C176 E901            	   259:         sbc #1
+00:C178 85A3            	   260:         sta datalen
+00:C17A A5A4            	   261:         lda datalen+1
+00:C17C E900            	   262:         sbc #0
+00:C17E 85A4            	   263:         sta datalen+1
+00:C180 60              	   264:         rts
+                        	   265: 
+                        	   266:         ;; Routine to increment C64 address
+                        	   267: inc_c64addr:
+00:C181 18              	   268:         clc
+00:C182 A5A7            	   269:         lda c64addr
+00:C184 6901            	   270:         adc #1
+00:C186 85A7            	   271:         sta c64addr
+00:C188 A5A8            	   272:         lda c64addr+1
+00:C18A 6900            	   273:         adc #0
+00:C18C 85A8            	   274:         sta c64addr+1
+00:C18E 60              	   275:         rts
+                        	   276: 
+                        	   277:         ;; Routine to read data length & C64 address from GEOram
+                        	   278: read_header:
+00:C18F A200            	   279:         ldx #0
+                        	   280:         ;; Read data length
+00:C191 BD00DE          	   281:         lda georam,x
+00:C194 85A3            	   282:         sta datalen
+00:C196 E8              	   283:         inx
+00:C197 BD00DE          	   284:         lda georam,x
+00:C19A 85A4            	   285:         sta datalen+1
+00:C19C E8              	   286:         inx
+                        	   287:         ;; Read C64 address
+00:C19D BD00DE          	   288:         lda georam,x
+00:C1A0 85A7            	   289:         sta c64addr
+00:C1A2 E8              	   290:         inx
+00:C1A3 BD00DE          	   291:         lda georam,x
+00:C1A6 85A8            	   292:         sta c64addr+1
+00:C1A8 60              	   293:         rts
+                        	   294: 
+                        	   295:         ;; Read word from BASIC
+00:C1A9 208AAD          	   296: getwrd: jsr frmnum
+00:C1AC 4CF7B7          	   297:         jmp facwrd
+                        	   298:         
+                        	   299: write_summary:
+00:C1AF 2042595445532057	   300:         .string " BYTES WRITTEN TO GEORAM "
+00:C1B7 52495454454E2054
+00:C1BF 4F2047454F52414D
+00:C1C7 20
+00:C1C8 00
+                        	   301: 
+                        	   302: copy_summary:
+00:C1C9 2042595445532043	   303:         .string " BYTES COPIED FROM GEORAM TO "
+00:C1D1 4F50494544204652
+00:C1D9 4F4D2047454F5241
+00:C1E1 4D20544F20
+00:C1E6 00
+                        	   304: 
+                        	   305: outofmem:
+00:C1E7 4552524F523A2047	   306:         .string "ERROR: GEORAM OUT OF MEMORY"
+00:C1EF 454F52414D204F55
+00:C1F7 54204F46204D454D
+00:C1FF 4F5259
+00:C202 00
+                        	   307: 
 
 
 Symbols by name:
 c64addr                          E:00A7
-chklen                           A:C03C
-chkpg                            A:C0C8
-copy_summary                     A:C1B1
-curblock                         E:00A5
-curpage                          E:00A6
+chklen                           A:C04C
+chkpg                            A:C0D8
+chrout                           E:FFD2
+comma                            E:AEFD
+copy_summary                     A:C1C9
+curblock                         E:00A6
+curpage                          E:00A5
 datalen                          E:00A3
-dec_datalen                      A:C155
-enomem                           A:C0A5
+dec_datalen                      A:C173
+enomem                           A:C0B2
 facwrd                           E:B7F7
-fincpy                           A:C0F7
-finwrt                           A:C086
-first_block                      E:00A8
+fincpy                           A:C107
+finwrt                           A:C096
+firstblock                       E:00A9
+firstpage                        E:00A8
 frmnum                           E:AD8A
 geoblock                         E:DFFF
 geopage                          E:DFFE
 georam                           E:DE00
-getwrd                           A:C18B
+getwrd                           A:C1A9
 illqua                           E:B248
-inc_c64addr                      A:C163
-inc_datalen                      A:C115
-incadr                           A:C0CE
-init                             A:C0FE
-iqerr                            A:C010
+inc_c64addr                      A:C181
+inc_datalen                      A:C127
+incadr                           A:C0DE
+init                             A:C10E
+iqerr                            A:C022
 linnum                           E:0014
 linprt                           E:BDCD
 MAX_BLOCK                        E:0020
 MAX_PAGE                         E:0040
 newline                          E:AAD7
-nextblock                        A:C05D
-nextpage                         A:C04B
-nxblk                            A:C0E2
-nxpag                            A:C0D4
+nextblock                        A:C06D
+nextpage                         A:C05B
+nxblk                            A:C0F2
+nxpag                            A:C0E4
 offset                           E:00A7
-out                              A:C02E
-out1                             A:C031
-outofmem                         A:C1CF
+out                              A:C03E
+out1                             A:C041
+outofmem                         A:C1E7
 pa_adr                           E:0056
 pa_buf                           E:015B
 pa_len                           E:004E
 pa_op                            E:004B
 PA_START                         E:0080
 PA_STOP                          E:00C0
-print_copy_summary               A:C13C
-print_write_summary              A:C123
-read                             A:C0B0
-read_header                      A:C171
-return                           A:C085
-rloop                            A:C0B9
-set_block                        A:C000
-start                            A:C072
+print_copy_summary               A:C15A
+print_write_summary              A:C135
+read                             A:C0C0
+read_header                      A:C18F
+return                           A:C095
+rloop                            A:C0C9
+setfirst                         A:C000
+start                            A:C082
 strout                           E:AB1E
-write                            A:C020
-write_summary                    A:C191
+write                            A:C030
+write_summary                    A:C1AF
 
 Symbols by value:
 0014 linnum
@@ -374,49 +392,52 @@ Symbols by value:
 0056 pa_adr
 0080 PA_START
 00A3 datalen
-00A5 curblock
-00A6 curpage
+00A5 curpage
+00A6 curblock
 00A7 c64addr
 00A7 offset
-00A8 first_block
+00A8 firstpage
+00A9 firstblock
 00C0 PA_STOP
 015B pa_buf
 AAD7 newline
 AB1E strout
 AD8A frmnum
+AEFD comma
 B248 illqua
 B7F7 facwrd
 BDCD linprt
-C000 set_block
-C010 iqerr
-C020 write
-C02E out
-C031 out1
-C03C chklen
-C04B nextpage
-C05D nextblock
-C072 start
-C085 return
-C086 finwrt
-C0A5 enomem
-C0B0 read
-C0B9 rloop
-C0C8 chkpg
-C0CE incadr
-C0D4 nxpag
-C0E2 nxblk
-C0F7 fincpy
-C0FE init
-C115 inc_datalen
-C123 print_write_summary
-C13C print_copy_summary
-C155 dec_datalen
-C163 inc_c64addr
-C171 read_header
-C18B getwrd
-C191 write_summary
-C1B1 copy_summary
-C1CF outofmem
+C000 setfirst
+C022 iqerr
+C030 write
+C03E out
+C041 out1
+C04C chklen
+C05B nextpage
+C06D nextblock
+C082 start
+C095 return
+C096 finwrt
+C0B2 enomem
+C0C0 read
+C0C9 rloop
+C0D8 chkpg
+C0DE incadr
+C0E4 nxpag
+C0F2 nxblk
+C107 fincpy
+C10E init
+C127 inc_datalen
+C135 print_write_summary
+C15A print_copy_summary
+C173 dec_datalen
+C181 inc_c64addr
+C18F read_header
+C1A9 getwrd
+C1AF write_summary
+C1C9 copy_summary
+C1E7 outofmem
 DE00 georam
 DFFE geopage
 DFFF geoblock
+FFD2 chrout

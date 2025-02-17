@@ -6,14 +6,14 @@ routine to copy from GEOram to C64 memory.
 Usage
 ---
 
-Set GEOram starting block:
+Set GEOram starting block and page:
 
-    SYS(49152) 0
+    SYS(49152) 0,2 REM BLOCK 0, PAGE 2
 
 Assemble to GEOram:
 
-    .OPT P,O=$C020
+    .OPT P,O=$C030
 
 Copy object code from GEOram to C64 memory:
 
-    SYS49328
+    SYS49344
