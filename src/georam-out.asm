@@ -1,24 +1,41 @@
         ;; GEOram output module for Profi-Ass v2
         ;; =====================================
-        ;; A plugin for Profi-Ass v2 to emit object code to GEOram.
-        ;; Also provides a routine to copy to C64 memory.
         ;; 
-        ;; Format:
+        ;; Copyright (c) 2025 Ralph Moeritz. MIT license. See file
+        ;; COPYING for details.
+        ;; ________________________________________________________
+        ;; 
+        ;; A plugin for Profi-Ass v2 to emit object code to GEOram. 
+        ;; Also provided are routines to read from GEOram to C64 
+        ;; memory and load a PRG file to GEOram.
+        ;; 
+        ;; Data Format
+        ;; -----------
+        ;;
         ;; +-------------+---------------+-------------+
-        ;; |    WORD     |     WORD      |             |
+        ;; |    $de00    |     $de02     |  $de04 ...  |
+        ;; +-------------+---------------+-------------+
         ;; | data length | start address | object code |
         ;; +-------------+---------------+-------------+
         ;;
-        ;; Usage:
-        ;; ------
+        ;; Usage
+        ;; -----
+        ;; 
         ;; Set GEOram starting block & page:
-        ;;   SYS(49152) 0,2 REM BLOCK 0, PAGE 2
+        ;; 
+        ;;     SYS(49152) 0,2 REM BLOCK 0, PAGE 2
         ;; 
         ;; Assemble to GEOram:
-        ;;   .OPT P,O=$C030
         ;; 
-        ;; Copy object code from GEOram to C64 memory:
-        ;;   SYS49344
+        ;;     .OPT P,O=$C030
+        ;; 
+        ;; Read object code from GEOram to C64 memory:
+        ;; 
+        ;;     SYS49344
+        ;;
+        ;; Load PRG file to GEOram:
+        ;; 
+        ;;     SYS(49424) "FILENAME
 
         ;; Constants
 PA_START:       .equ $80        ;pa_len value indicating start of assembly
@@ -27,6 +44,7 @@ MAX_PAGE:       .equ 64         ;last GEOram page +1
 MAX_BLOCK:      .equ 32         ;last GEOram block +1
 
         ;; OS routines
+let:            .equ $a9b1      ;part of routine for BASIC let command
 newline:        .equ $aad7      ;print CRLF        
 strout:         .equ $ab1e      ;print 0 terminated string in A (lo) and Y (hi)
 frmnum:         .equ $ad8a      ;eval numeric expression
@@ -34,10 +52,21 @@ comma:          .equ $aefd      ;detect comma in BASIC line
 facwrd:         .equ $b7f7      ;convert FAC #1 to word at linnum
 illqua:         .equ $b248      ;routine to trigger illegal quantity error
 linprt:         .equ $bdcd      ;print 16-bit integer in X (lo) and A (hi)
+setlfs:         .equ $ffba      ;set file, device, and secondary address
+setnam:         .equ $ffbd      ;set filename
+open:           .equ $ffc0      ;open file
+close:          .equ $ffc3      ;close file in A
 chrout:         .equ $ffd2      ;print a character in A
+chkin:          .equ $ffc6      ;take input from file in A
+clrchn:         .equ $ffcc      ;clear channel, restore default device
+chrin:          .equ $ffcf      ;read char from file into A
         
         ;; OS memory
-linnum:         .ezp $14        ;variable to store BASIC line number
+valtyp:         .ezp $0d        ;BYTE BASIC datatype ($ff string, $00 numeric)
+intflg:         .ezp $0e        ;BYTE BASIC datatype ($80 int, $00 float)
+linnum:         .ezp $14        ;WORD BASIC line number
+forptr:         .ezp $49        ;BYTE,WORD pointer for BASIC for/next loop
+status:         .ezp $90        ;BYTE kernal I/O status
         
         ;; GEOram registers
 georam:         .equ $de00      ;PAGE first address of page mapped to GEOram
@@ -50,17 +79,20 @@ pa_len:         .ezp $4e        ;BYTE number of bytes to emit -1
 pa_adr:         .ezp $56        ;WORD object code starting address
 pa_buf:         .equ $015b      ;buffer for remaining bytes beyond first 3
 
-        ;; Working memory
-datalen:        .ezp $a3        ;WORD total bytes written or left to copy
+        ;; Working memory        
+curblock:       .ezp $92        ;BYTE current GEOram block (0-31)
+datalen:        .ezp $96        ;WORD total bytes written or left to copy
 curpage:        .ezp $a5        ;BYTE current GEOram page (0-63)        
-curblock:       .ezp $a6        ;BYTE current GEOram block (0-31)
 offset:         .ezp $a7        ;BYTE offset within page ($00-$ff)
-c64addr:        .ezp $a7        ;WORD address to copy to in C64 main memory
-firstpage:      .ezp $a8        ;BYTE first GEORAM page to write to / copy from
-firstblock:     .ezp $a9        ;BYTE first GEOram block to write to / copy from
+c64addr:        .ezp $a8        ;WORD address to copy to in C64 main memory
+firstpage:      .ezp $f7        ;BYTE first GEORAM page to write to / copy from
+firstblock:     .ezp $f8        ;BYTE first GEOram block to write to / copy from
+strlen:         .ezp $f9        ;BYTE string length
+strptr:         .ezp $fa        ;WORD string pointer
 
         ;; Set first block and page from user input.
-        ;; Call from BASIC via SYS.
+        ;; Call from BASIC via:
+        ;;     SYS(49152) BLOCK,PAGE
         ;; ------------------------------------------
         .org $c000
 setfirst:
@@ -83,40 +115,39 @@ setfirst:
 iqerr:  jmp illqua
         
         ;; Write object code to GEOram.
-        ;; Called by Profi-Ass.
+        ;; Call from Profi-Ass via:
+        ;;     .OPT P,O=$C030
         ;; ----------------------------
         .align 4
 write:  lda pa_len
         cmp #PA_STOP
         beq finwrt
         cmp #PA_START
-        beq start
+        beq wrstrt
         ldy #0
         ldx offset
-out:    lda pa_op,y
-out1:   sta georam,x
+wrout:  lda pa_op,y
+wrout1: sta georam,x
         jsr inc_datalen         ;increment total bytes written
         inx
-        bvs nextpage            ;overflow? next page!
+        beq wrnxpg              ;overflow? next page!
         stx offset
-chklen: cpy pa_len
-        beq return
+wrchln: cpy pa_len
+        beq wrfin
         iny
         cpy #3
-        bcc out
+        bcc wrout
         lda pa_buf-3,y
-        jmp out1
-nextpage:
-        ldx #0
+        jmp wrout1
+wrnxpg: ldx #0
         stx offset
         inc curpage
         lda curpage
         cmp #MAX_PAGE
-        beq nextblock           ;past page 63? next block!
+        beq wrnxbk              ;past page 63? next block!
         sta geopage
-        jmp chklen
-nextblock:
-        lda #0
+        jmp wrchln
+wrnxbk: lda #0
         sta curpage
         sta geopage
         inc curblock
@@ -124,8 +155,8 @@ nextblock:
         cmp #MAX_BLOCK          ;past page 31? out of memory!
         beq enomem
         sta geoblock
-        jmp chklen
-start:  jsr init
+        jmp wrchln
+wrstrt: jsr init
         ldx offset
         lda pa_adr
         sta georam,x
@@ -134,7 +165,7 @@ start:  jsr init
         sta georam,x
         inx
         stx offset
-return: rts        
+wrfin:  rts        
         ;; Write data length to first block & page of GEOram
 finwrt: lda firstblock
         sta geoblock
@@ -146,42 +177,44 @@ finwrt: lda firstblock
         sta georam
         lda datalen+1
         sta georam+1
-        jsr print_write_summary
+        jsr print_wrtmsg
         rts
 enomem: jsr newline
-        lda #<outofmem
-        ldy #>outofmem
+        lda #<oommsg
+        ldy #>oommsg
         jsr strout
         rts
 
-        ;; Copy object code from GEOram to C64.
-        ;; Call from BASIC via SYS.
+        ;; Read object code from GEOram.
+        ;; Call from BASIC via:
+        ;;     SYS49344
         ;; ------------------------------------
         .align 4
-read:   jsr init
-        jsr read_header
+read:   jsr read_header
         inx
-        ;; Copy loop
         ldy #0
-rloop:  lda georam,x
+rdloop: lda georam,x
         sta (c64addr),y
-        jsr dec_datalen
+        jsr dec_datalen         ;decrement remaining bytes
+        lda datalen+1
+        bne :+
         lda datalen
-        beq fincpy
-        iny
-        bvs incadr
-chkpg:  inx
-        bvs nxpag
-        jmp rloop
-incadr: jsr inc_c64addr
-        jmp chkpg
-nxpag:  inc curpage
+        beq rdfin               ;exit if remaining bytes == 0
+:       iny
+        beq incadr
+rdchpg: inx
+        beq rdnxpg
+        jmp rdloop
+incadr: inc c64addr+1
+        jmp rdchpg
+rdnxpg: ldx #0
+        inc curpage
         lda curpage
         cmp #MAX_PAGE
-        beq nxblk               ;past page 63? next block!
+        beq rdnxbk              ;past page 63? next block!
         sta geopage
-        jmp rloop
-nxblk:  lda #0
+        jmp rdloop
+rdnxbk: lda #0
         sta curpage
         sta geopage
         inc curblock
@@ -189,9 +222,86 @@ nxblk:  lda #0
         cmp #MAX_BLOCK          ;past block 31? out of memory!
         beq enomem
         sta geoblock
-        jmp rloop
-fincpy: jsr read_header
-        jsr print_copy_summary
+        jmp rdloop
+rdfin:  jsr read_header
+        jsr print_rdmsg
+        rts
+
+        ;; Load PRG file contents to GEOram.
+        ;; Call from BASIC via:
+        ;;     SYS(49424) "FILENAME"
+        ;; ---------------------------------
+        .align 4
+ldprg:  jsr getstr              ;read string from BASIC
+        lda strlen
+        beq ldfin               ;short circuit exit if strlen == 0
+        jsr init                ;init GEOram registers & working memory
+        jsr cpyfnm              ;copy string to filename buffer
+        lda #1
+        ldx #8
+        ldy #2
+        jsr setlfs              ;set file #, device #, secondary address
+        lda strlen
+        clc
+        adc #6                  ;add 6 to length for '0:' prefix and ',p,r' suffix
+        ldx #<fnmbuf
+        ldy #>fnmbuf
+        jsr setnam              ;setup filename
+        jsr open                ;open file for reading
+        ldx #1
+        jsr chkin               ;take input from file #1
+        ;; Copy PRG address (first two bytes)
+        jsr chrin
+        ldx offset              ;leave space for data length
+        sta georam,x
+        inx
+        jsr chrin
+        sta georam,x
+        inx
+ldloop: jsr chrin
+        sta georam,x
+        jsr inc_datalen
+        lda status
+        bne ldfin
+        inx
+        beq ldnxpg              ;overflow? next page!
+        jmp ldloop
+ldnxpg: ldx #0
+        inc curpage
+        lda curpage
+        cmp #MAX_PAGE
+        beq ldnxbl
+        sta geopage
+        jmp ldloop
+ldnxbl: ldx #0
+        stx curpage
+        stx geopage
+        inc curblock
+        lda curblock
+        cmp #MAX_BLOCK          ;past page 31? out of memory!
+        beq ldnomem
+        sta geoblock
+        jmp ldloop
+ldnomem:
+        jsr newline
+        lda #<oommsg
+        ldy #>oommsg
+        jsr strout
+ldfin:  lda #1
+        jsr close               ;close file in A
+        jsr clrchn              ;clear channels, restore default devices
+        ;; Write data length to first word of first block+page
+        lda firstblock
+        sta curblock
+        sta geoblock
+        lda firstpage
+        sta curpage
+        sta geopage
+        lda datalen
+        sta georam
+        lda datalen+1
+        sta georam+1
+        jsr print_wrtmsg
         rts
         
         ;; Routine to initialize GEOram registers & working memory
@@ -210,23 +320,28 @@ init:   lda firstblock
         
         ;; Routine to increment data length
 inc_datalen:
-        clc
-        lda datalen
-        adc #1
-        sta datalen
-        lda datalen+1
-        adc #0
-        sta datalen+1
-        rts
+        inc datalen
+        bne :+
+        inc datalen+1
+:       rts
 
+        ;; Routine to decrement data length
+dec_datalen:
+        dec datalen
+        lda datalen
+        cmp #$ff
+        bne :+
+        dec datalen+1
+:       rts
+        
         ;; Routine to print summary of data written
-print_write_summary:
+print_wrtmsg:
         jsr newline
         ldx datalen
         lda datalen+1
         jsr linprt
-        lda #<write_summary
-        ldy #>write_summary
+        lda #<wrtmsg
+        ldy #>wrtmsg
         jsr strout
         ldx curblock
         lda #0
@@ -239,43 +354,22 @@ print_write_summary:
         rts
 
         ;; Routine to print summary of data copied
-print_copy_summary:
+print_rdmsg:
         jsr newline
         ldx datalen
         lda datalen+1
         jsr linprt
-        lda #<copy_summary
-        ldy #>copy_summary
+        lda #<rdmsg
+        ldy #>rdmsg
         jsr strout
         ldx c64addr
         lda c64addr+1
         jsr linprt
         rts
 
-        ;; Routine to decrement data length
-dec_datalen:
-        sec
-        lda datalen
-        sbc #1
-        sta datalen
-        lda datalen+1
-        sbc #0
-        sta datalen+1
-        rts
-
-        ;; Routine to increment C64 address
-inc_c64addr:
-        clc
-        lda c64addr
-        adc #1
-        sta c64addr
-        lda c64addr+1
-        adc #0
-        sta c64addr+1
-        rts
-
         ;; Routine to read data length & C64 address from GEOram
 read_header:
+        jsr init
         ldx #0
         ;; Read data length
         lda georam,x
@@ -295,12 +389,55 @@ read_header:
         ;; Read word from BASIC
 getwrd: jsr frmnum
         jmp facwrd
-        
-write_summary:
-        .string " BYTES WRITTEN TO GEORAM "
 
-copy_summary:
-        .string " BYTES COPIED FROM GEORAM TO "
+        ;; Read string from BASIC
+getstr: lda #$ff
+        sta valtyp
+        sta intflg
+        lda #<strlen
+        ldx #>strlen
+        sta forptr
+        stx forptr+1
+        jmp let
 
-outofmem:
-        .string "ERROR: GEORAM OUT OF MEMORY"
+        ;; Routine to copy string to filename buffer
+cpyfnm: ldx strlen
+        inx
+        inx
+        lda #","
+        sta fnmbuf,x
+        inx
+        lda #"P"
+        sta fnmbuf,x
+        inx
+        lda #","
+        sta fnmbuf,x
+        inx
+        lda #"R"
+        sta fnmbuf,x
+        lda strlen
+        tax
+        sec
+        sbc #1
+        tay
+        inx
+:       bmi :+
+        lda (strptr),y
+        sta fnmbuf,x
+        dex
+        dey
+        jmp :-
+:       rts
+
+        ;; Filename buffer
+fnmbuf: .text "0:"
+        .blk 20
+
+        ;; Message for write operation
+wrtmsg: .string " BYTES WRITTEN TO GEORAM "
+
+        ;; Message for read operation
+rdmsg:  .string " BYTES READ FROM GEORAM TO "
+
+        ;; Out of memory error message
+oommsg: .string "ERROR: GEORAM OUT OF MEMORY"

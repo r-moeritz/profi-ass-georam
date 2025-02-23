@@ -1,7 +1,8 @@
 This is a plugin for the C64 assembler Profi-Ass v2 published by Data
 Becker in 1984. This plugin enables Profi-Ass to emit object code to
-GEOram (as opposed to disk or C64 main memory). Also provides a
-routine to copy from GEOram to C64 memory.
+GEOram (as opposed to disk or C64 main memory). Also provided are
+routines to read from GEOram to C64 memory and load a PRG file to
+GEOram.
 
 Usage
 ---
@@ -14,6 +15,16 @@ Assemble to GEOram:
 
     .OPT P,O=$C030
 
-Copy object code from GEOram to C64 memory:
+Read object code from GEOram to C64 memory:
 
     SYS49344
+
+Load PRG file to GEOram:
+
+    SYS(49424) "FILENAME"
+
+Copying
+---
+
+Copyright (c) 2025 Ralph Moeritz. MIT license. See file COPYING for
+details.
