@@ -21,9 +21,9 @@
         ;; Usage
         ;; -----
         ;; 
-        ;; Set GEOram starting block & page:
+        ;; Set GEOram starting block to 0, page 2
         ;; 
-        ;;     SYS(49152) 0,2 REM BLOCK 0, PAGE 2
+        ;;     SYS(49152) 0,2
         ;; 
         ;; Assemble to GEOram:
         ;; 
@@ -33,17 +33,36 @@
         ;; 
         ;;     SYS49344
         ;;
-        ;; Load PRG file to GEOram:
+        ;; Load PRG file "SUPERMON64" from disk device #8 to GEOram:
         ;; 
-        ;;     SYS(49424) "FILENAME
+        ;;     SYS(49424) "SUPERMON64",8
 
+        ;; Macros
+        ;; ------
+
+        ;; BNE to distant address
+jne:    .macro adr
+        beq :+
+        jmp \adr
+:
+        .endm
+        
+        ;; BEQ to distant address
+jeq:    .macro adr
+        bne :+
+        jmp \adr
+:
+        .endm
+        
         ;; Constants
+        ;; ---------
 PA_START:       .equ $80        ;pa_len value indicating start of assembly
 PA_STOP:        .equ $c0        ;pa_len value indicating end of assembly
 MAX_PAGE:       .equ 64         ;last GEOram page +1
 MAX_BLOCK:      .equ 32         ;last GEOram block +1
 
         ;; OS routines
+        ;; -----------
 let:            .equ $a9b1      ;part of routine for BASIC let command
 newline:        .equ $aad7      ;print CRLF        
 strout:         .equ $ab1e      ;print 0 terminated string in A (lo) and Y (hi)
@@ -62,6 +81,7 @@ clrchn:         .equ $ffcc      ;clear channel, restore default device
 chrin:          .equ $ffcf      ;read char from file into A
         
         ;; OS memory
+        ;; ---------
 valtyp:         .ezp $0d        ;BYTE BASIC datatype ($ff string, $00 numeric)
 intflg:         .ezp $0e        ;BYTE BASIC datatype ($80 int, $00 float)
 linnum:         .ezp $14        ;WORD BASIC line number
@@ -69,17 +89,20 @@ forptr:         .ezp $49        ;BYTE,WORD pointer for BASIC for/next loop
 status:         .ezp $90        ;BYTE kernal I/O status
         
         ;; GEOram registers
+        ;; ----------------
 georam:         .equ $de00      ;PAGE first address of page mapped to GEOram
 geopage:        .equ $dffe      ;BYTE GEOram page selection register
 geoblock:       .equ $dfff      ;BYTE 16K GEOram block selection register
 
-        ;; Profi-Ass variables to read
+        ;; Profi-Ass variables (R/O)
+        ;; -------------------------
 pa_op:          .ezp $4b        ;BYTEx3 buffer containing first 3 bytes
 pa_len:         .ezp $4e        ;BYTE number of bytes to emit -1
 pa_adr:         .ezp $56        ;WORD object code starting address
 pa_buf:         .equ $015b      ;buffer for remaining bytes beyond first 3
 
-        ;; Working memory        
+        ;; Working memory (ZP)
+        ;; -------------------
 curblock:       .ezp $92        ;BYTE current GEOram block (0-31)
 datalen:        .ezp $96        ;WORD total bytes written or left to copy
 curpage:        .ezp $a5        ;BYTE current GEOram page (0-63)        
@@ -90,10 +113,14 @@ firstblock:     .ezp $f8        ;BYTE first GEOram block to write to / copy from
 strlen:         .ezp $f9        ;BYTE string length
 strptr:         .ezp $fa        ;WORD string pointer
 
-        ;; Set first block and page from user input.
+        ;; Routines
+        ;; --------
+
+        ;; Routine to set first block and page from user input.
         ;; Call from BASIC via:
-        ;;     SYS(49152) BLOCK,PAGE
-        ;; ------------------------------------------
+        ;;     SYS(49152) block #, page #
+        ;;
+        ;; E.g. SYS(49152) 0,0
         .org $c000
 setfirst:
         jsr getwrd
@@ -114,10 +141,9 @@ setfirst:
         rts
 iqerr:  jmp illqua
         
-        ;; Write object code to GEOram.
+        ;; Routine to write object code to GEOram.
         ;; Call from Profi-Ass via:
         ;;     .OPT P,O=$C030
-        ;; ----------------------------
         .align 4
 write:  lda pa_len
         cmp #PA_STOP
@@ -185,10 +211,9 @@ enomem: jsr newline
         jsr strout
         rts
 
-        ;; Read object code from GEOram.
+        ;; Routnie to read object code from GEOram.
         ;; Call from BASIC via:
         ;;     SYS49344
-        ;; ------------------------------------
         .align 4
 read:   jsr read_header
         inx
@@ -227,20 +252,27 @@ rdfin:  jsr read_header
         jsr print_rdmsg
         rts
 
-        ;; Load PRG file contents to GEOram.
+        ;; Routine to load PRG file from disk to GEOram.
         ;; Call from BASIC via:
-        ;;     SYS(49424) "FILENAME"
-        ;; ---------------------------------
+        ;;     SYS(49424) filename, device #
+        ;; 
+        ;; E.g. SYS(49424) "SUPERMON64",8
         .align 4
 ldprg:  jsr getstr              ;read string from BASIC
         lda strlen
-        beq ldfin               ;short circuit exit if strlen == 0
-        jsr init                ;init GEOram registers & working memory
+        jeq ldfin               ;short circuit exit if strlen == 0
         jsr cpyfnm              ;copy string to filename buffer
+        jsr comma
+        jsr getwrd
+        ldx linnum+1
+        bne ldfin               ;short-circuit exit if device # > 255
+        ldx linnum
+        cpx #8
+        bcc ldfin               ;short-circuit exit if device # < 8       
         lda #1
-        ldx #8
         ldy #2
         jsr setlfs              ;set file #, device #, secondary address
+        jsr init                ;init GEOram registers & working memory
         lda strlen
         clc
         adc #6                  ;add 6 to length for '0:' prefix and ',p,r' suffix
