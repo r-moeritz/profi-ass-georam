@@ -4,24 +4,45 @@ GEOram (as opposed to disk or C64 main memory). Also provided are
 routines to read from GEOram to C64 memory and load a PRG file from
 disk to GEOram.
 
+The idea is to reduce the amount of disk access required via a
+workflow similar to the following:
+
+1. Load assembler, monitor, source code, and any assets from disk to
+   GEOram.
+2. Write some code.
+3. Assemble to GEOram.
+4. Exit the assembler.
+5. Load your object code and any assets from GEOram.
+6. Test your program.
+7. Soft-reset the C64.
+8. Load assembler, monitor, and source code from GEOram.
+9. Go to step 2.
+
+This plugin has been designed to work hand-in-hand with both Profi-Ass
+and Profi-Mon and sits in RAM from $CC00 to $CEFF. That means you can
+have all 3 programs loaded without issue.
+
+I've included cracked copies of both Profi-Ass and Profi-Mon, as well
+as a manual in German.
+
 Usage
 ---
 
-Set GEOram starting block to 0, page 2:
+Set GEOram starting block to 0, page 1:
 
-    SYS(49152) 0,2
+    SYS(52224) 0,1
 
 Assemble to GEOram:
 
-    .OPT P,O=$C030
+    .OPT P,O=$CC30
 
 Read object code from GEOram to C64 memory:
 
-    SYS49344
+    SYS52416
 
 Load PRG file from disk device #8 to GEOram:
 
-    SYS(49424) "SUPERMON64",8
+    SYS(52496) "PROFI-MON V2.0",8
 
 Copying
 ---

@@ -23,30 +23,23 @@
         ;; 
         ;; Set GEOram starting block to 0, page 2
         ;; 
-        ;;     SYS(49152) 0,2
+        ;;     SYS(52224) 0,2
         ;; 
         ;; Assemble to GEOram:
         ;; 
-        ;;     .OPT P,O=$C030
+        ;;     .OPT P,O=$CC30
         ;; 
         ;; Read object code from GEOram to C64 memory:
         ;; 
-        ;;     SYS49344
+        ;;     SYS52416
         ;;
-        ;; Load PRG file "SUPERMON64" from disk device #8 to GEOram:
+        ;; Load PRG file "PROFI-MON V2.0" from disk device #8 to GEOram:
         ;; 
-        ;;     SYS(49424) "SUPERMON64",8
+        ;;     SYS(52496) "PROFI-MON V2.0",8
 
         ;; Macros
         ;; ------
 
-        ;; BNE to distant address
-jne:    .macro adr
-        beq :+
-        jmp \adr
-:
-        .endm
-        
         ;; BEQ to distant address
 jeq:    .macro adr
         bne :+
@@ -118,10 +111,10 @@ strptr:         .ezp $fa        ;WORD string pointer
 
         ;; Routine to set first block and page from user input.
         ;; Call from BASIC via:
-        ;;     SYS(49152) block #, page #
+        ;;     SYS(52224) block #, page #
         ;;
-        ;; E.g. SYS(49152) 0,0
-        .org $c000
+        ;; E.g. SYS(52224) 0,0
+        .org $cc00
 setfirst:
         jsr getwrd
         lda linnum+1
@@ -143,7 +136,7 @@ iqerr:  jmp illqua
         
         ;; Routine to write object code to GEOram.
         ;; Call from Profi-Ass via:
-        ;;     .OPT P,O=$C030
+        ;;     .OPT P,O=$CC30
         .align 4
 write:  lda pa_len
         cmp #PA_STOP
@@ -211,9 +204,9 @@ enomem: jsr newline
         jsr strout
         rts
 
-        ;; Routnie to read object code from GEOram.
+        ;; Routine to read object code from GEOram.
         ;; Call from BASIC via:
-        ;;     SYS49344
+        ;;     SYS52416
         .align 4
 read:   jsr read_header
         inx
@@ -254,9 +247,9 @@ rdfin:  jsr read_header
 
         ;; Routine to load PRG file from disk to GEOram.
         ;; Call from BASIC via:
-        ;;     SYS(49424) filename, device #
+        ;;     SYS(52496) filename, device #
         ;; 
-        ;; E.g. SYS(49424) "SUPERMON64",8
+        ;; E.g. SYS(52496) "PROFI-MON V2.0",8
         .align 4
 ldprg:  jsr getstr              ;read string from BASIC
         lda strlen
