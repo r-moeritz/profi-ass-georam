@@ -1,0 +1,263 @@
+   10 open1,8,1,"@0:georam-out"
+   20 sys32768
+   30 .opt p,o1
+   40 ;
+   50 ;georam output module for profi-ass
+   60 ;(c) 2025 ralph moeritz. mit license
+   70 ;
+   80 ;--- macros ---
+   90 jeq .mac adr
+  100 bne .fin:jmp adr
+  110 fin .men
+  120 ;
+  130 align .mac
+  140 .if * & $000f:*= * & $fff0 + $10
+  150 .men
+  160 ;
+  170 ;--- constants---
+  180 pastrt =$80:pastop =$c0
+  190 maxpag =64:maxblk =32
+  200 ;
+  210 ;--- os routines ---
+  220 let =$a9b1:newlin =$aad7
+  230 strout =$ab1e:frmnum =$ad8a
+  240 comma =$aefd:facwrd =$b7f7
+  250 illqua =$b248:linprt =$bdcd
+  260 setlfs =$ffba:setnam =$ffbd
+  270 open =$ffc0:close =$ffc3
+  280 chrout =$ffd2:chkin =$ffc6
+  290 clrchn =$ffcc:chrin =$ffcf
+  300 ;
+  310 ;--- os memory ---
+  320 valtyp =$0d:intflg =$0e
+  330 linnum =$14:forptr =$49
+  340 status =$90
+  350 ;
+  360 ;--- georam registers ---
+  370 georam =$de00:geopag =$dffe
+  380 geoblk =$dfff
+  390 ;
+  400 ;--- profi-ass variables ---
+  410 paop =$4b:palen =$4e
+  420 paadr =$56:pabuf =$015b
+  430 ;
+  440 ;--- working memory (zp) ---
+  450 curblk =$92:datlen =$96
+  460 curpag =$a5:offset =$a7
+  470 c64adr =$a8:fstpag =$f7
+  480 fstblk =$f8:strlen =$f9
+  490 strptr =$fa
+  500 ;
+  510 ;--- routines ---
+  520 *=$cc00
+  530 ;
+  540 ;set 1st blk+pag from user input
+  550 ;call from basic:
+  560 ;  sys(52224) blk #,pag #
+  570 set1st jsr getwrd
+  580 lda linnum+1:bne iqerr
+  590 lda linnum:cmp #maxblk
+  600 bcs iqerr:sta fstblk
+  610 jsr comma:jsr getwrd
+  620 lda linnum+1:bne iqerr
+  630 lda linnum:cmp #maxpag
+  640 bcs iqerr:sta fstpag
+  650 rts
+  660 iqerr jmp illqua
+  670 ;
+  680 ;write object code to georam
+  690 ;call from profi-ass:
+  700 ;  .opt p,o=$cc30
+  710 'align
+  720 write lda palen
+  730 cmp #pastop:beq finwrt
+  740 cmp #pastrt:beq wrstrt
+  750 ldy #0:ldx offset
+  760 wrout lda paop,y
+  770 wrout1 sta georam,x
+  780 jsr incdl:inx
+  790 beq wrnxpg:stx offset
+  800 wrchln cpy palen
+  810 beq wrfin:iny
+  820 cpy #3:bcc wrout
+  830 lda pabuf-3,y:jmp wrout1
+  840 wrnxpg ldx #0
+  850 stx offset:inc curpag
+  860 lda curpag:cmp #maxpag
+  870 beq wrnxbk:sta geopag
+  880 jmp wrchln
+  890 wrnxbk lda #0
+  900 sta curpag:sta geopag
+  910 inc curblk:lda curblk
+  920 cmp #maxblk:beq enomem
+  930 sta geoblk:jmp wrchln
+  940 wrstrt jsr init
+  950 ldx offset:lda paadr
+  960 sta georam,x:inx
+  970 lda paadr+1:sta georam,x
+  980 inx:stx offset
+  990 wrfin rts
+ 1000 finwrt lda fstblk
+ 1010 sta geoblk:sta curblk
+ 1020 lda fstpag:sta geopag
+ 1030 sta curpag:lda datlen
+ 1040 sta georam:lda datlen+1
+ 1050 sta georam+1:jsr prntwm
+ 1060 rts
+ 1070 enomem jsr newlin
+ 1080 lda #<oommsg:ldy #>oommsg
+ 1090 jsr strout:rts
+ 1100 ;read object code from georam
+ 1110 ;call from basic:
+ 1120 ;  sys52416
+ 1130 'align
+ 1140 read jsr readhr
+ 1150 inx:ldy #0
+ 1160 rdloop lda georam,x
+ 1170 sta (c64adr),y:jsr decdl
+ 1180 lda datlen+1:bne rdl1
+ 1190 lda datlen:beq rdfin
+ 1200 rdl1 iny:beq incadr
+ 1210 rdchpg inx
+ 1220 beq rdnxpg:jmp rdloop
+ 1230 incadr inc c64adr+1
+ 1240 jmp rdchpg
+ 1250 rdnxpg ldx #0
+ 1260 inc curpag:lda curpag
+ 1270 cmp #maxpag:beq rdnxbk
+ 1280 sta geopag:jmp rdloop
+ 1290 rdnxbk lda #0
+ 1300 sta curpag:sta geopag
+ 1310 inc curblk:lda curblk
+ 1320 cmp #maxblk:beq enomem
+ 1330 sta geoblk:jmp rdloop
+ 1340 rdfin jsr readhr
+ 1350 jsr printrm:rts
+ 1360 ;
+ 1370 ;load prg file from disk to georam
+ 1380 ;call from basic:
+ 1390 ;  sys(52496) filename,device #
+ 1400 'align
+ 1410 ldprg jsr getstr
+ 1420 lda strlen:'jeq ldfin
+ 1430 jsr cpyfnm:jsr comma
+ 1440 jsr getwrd:ldx linnum+1
+ 1450 bne ldfin:ldx linnum
+ 1460 cpx #8:bcc ldfin
+ 1470 lda #1:ldy #2
+ 1480 jsr setlfs:jsr init
+ 1490 lda strlen:clc
+ 1500 adc #6:ldx #<fnmbuf:ldy #>fnmbuf
+ 1510 jsr setnam:jsr open
+ 1520 ldx #1:jsr chkin
+ 1530 jsr chrin:ldx offset
+ 1540 sta georam,x:inx
+ 1550 jsr chrin:sta georam,x
+ 1560 inx
+ 1570 ldloop jsr chrin
+ 1580 sta georam,x:jsr incdl
+ 1590 lda status:bne ldfin
+ 1600 inx:beq ldnxpg:jmp ldloop
+ 1610 ldnxpg ldx #0
+ 1620 inc curpag:lda curpag
+ 1630 cmp #maxpag:beq ldnxbl
+ 1640 sta geopag:jmp ldloop
+ 1650 ldnxbl ldx #0
+ 1660 stx curpag:stx geopag
+ 1670 inc curblk:lda curblk
+ 1680 cmp #maxblk:beq ldnmem
+ 1690 sta geoblk:jmp ldloop
+ 1700 ldnmem jsr newlin
+ 1710 lda #<oommsg:ldy #>oommsg
+ 1720 jsr strout
+ 1730 ldfin lda #1
+ 1740 jsr close:jsr clrchn
+ 1750 lda fstblk:sta curblk
+ 1760 sta geoblk:lda fstpag
+ 1770 sta curpag:sta geopag
+ 1780 lda datlen:sta georam
+ 1790 lda datlen+1:sta georam+1
+ 1800 jsr prntwm:rts
+ 1810 ;
+ 1820 ;init georam & working memory
+ 1830 init lda fstblk
+ 1840 sta geoblk:sta curblk
+ 1850 lda fstpag:sta geopag
+ 1860 sta curpag:lda #0
+ 1870 sta datlen:sta datlen+1
+ 1880 lda #2:sta offset:rts
+ 1890 ;
+ 1900 ;increment data length
+ 1910 incdl inc datlen
+ 1920 bne finid:inc datlen+1
+ 1930 finid rts
+ 1940 ;
+ 1950 ;decrement data length
+ 1960 decdl dec datlen
+ 1970 lda datlen:cmp #$ff
+ 1980 bne findd:dec datlen+1
+ 1990 findd rts
+ 2000 ;
+ 2010 ;print summary of data written
+ 2020 prntwm jsr newlin
+ 2030 ldx datlen:lda datlen+1
+ 2040 jsr linprt:lda #<wrtmsg
+ 2050 ldy #>wrtmsg:jsr strout
+ 2060 ldx curblk:lda #0
+ 2070 jsr linprt:lda #","
+ 2080 jsr chrout:ldx curpag
+ 2090 lda #0:jsr linprt:rts
+ 2100 ;
+ 2110 ;print summary of data read
+ 2120 printrm jsr newlin
+ 2130 ldx datlen:lda datlen+1
+ 2140 jsr linprt:lda #<rdmsg
+ 2150 ldy #>rdmsg:jsr strout
+ 2160 ldx c64adr:lda c64adr+1
+ 2170 jsr linprt:rts
+ 2180 ;
+ 2190 ;read data length& c64 address
+ 2200 ;from georam
+ 2210 readhr jsr init
+ 2220 ldx #0:lda georam,x
+ 2230 sta datlen:inx
+ 2240 lda georam,x:sta datlen+1
+ 2250 inx:lda georam,x
+ 2260 sta c64adr:inx
+ 2270 lda georam,x:sta c64adr+1:rts
+ 2280 ;
+ 2290 ;read word from basic
+ 2300 getwrd jsr frmnum:jmp facwrd
+ 2310 ;
+ 2320 getstr lda #$ff
+ 2330 sta valtyp:sta intflg
+ 2340 lda #<strlen:ldx #>strlen
+ 2350 sta forptr:stx forptr+1:jmp let
+ 2360 ;
+ 2370 ;copy string to filename buffer
+ 2380 cpyfnm ldx strlen
+ 2390 inx:inx:lda #",":sta fnmbuf,x
+ 2400 inx:lda #"p":sta fnmbuf,x
+ 2410 inx:lda #",":sta fnmbuf,x
+ 2420 inx:lda #"r":sta fnmbuf,x
+ 2430 lda strlen:tax:sec:sbc #1
+ 2440 tay:inx
+ 2450 cploop bmi cpfin
+ 2460 lda (strptr),y:sta fnmbuf,x
+ 2470 dex:dey:jmp cploop
+ 2480 cpfin rts
+ 2490 ;
+ 2500 ;filename buffer
+ 2510 fnmbuf .asc "0:"
+ 2520 *= *+20
+ 2530 ;
+ 2540 ;write operation summary
+ 2550 wrtmsg .asc " bytes written to georam "
+ 2560 .byte 0
+ 2570 ;read operation summary
+ 2580 rdmsg .asc " bytes read from georam to "
+ 2590 .byte 0
+ 2600 ;
+ 2610 ;out of memory error message
+ 2620 oommsg .asc "error: georam out of memory"
+ 2630 .byte 0
