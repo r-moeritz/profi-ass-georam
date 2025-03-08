@@ -21,32 +21,39 @@
         ;; Usage
         ;; -----
         ;; 
-        ;; Set GEOram starting block to 0, page 2
+        ;; Set GEOram starting block to 0, page 1
         ;; 
-        ;;     SYS(52224) 0,2
+        ;;     SYS(52224) 0,1
         ;; 
         ;; Assemble to GEOram:
         ;; 
-        ;;     .OPT P,O=$CC30
+        ;;     .OPT P,O=$CC2E
         ;; 
         ;; Read object code from GEOram to C64 memory:
         ;; 
-        ;;     SYS52416
+        ;;     SYS52376
         ;;
-        ;; Load PRG file "PROFI-MON V2.0" from disk device #8 to GEOram:
+        ;; Load PRG file "PROFI-ASS 64 V2.0" from disk device #8 to GEOram:
         ;; 
-        ;;     SYS(52496) "PROFI-MON V2.0",8
+        ;;     SYS(52432) "PROFI-ASS 64 V2.0",8
 
         ;; Macros
         ;; ------
 
-        ;; BEQ to distant address
-jeq:    .macro adr
-        bne :+
+        ;; BNE to distant address
+jne:    .macro adr
+        beq :+
         jmp \adr
 :
         .endm
         
+        ;; BCS to distant address
+jcs:    .macro adr
+        bcc :+
+        jmp \adr
+:
+        .endm
+
         ;; Constants
         ;; ---------
 PA_START:       .equ $80        ;pa_len value indicating start of assembly
@@ -106,8 +113,8 @@ firstblock:     .ezp $f8        ;BYTE first GEOram block to write to / copy from
 strlen:         .ezp $f9        ;BYTE string length
 strptr:         .ezp $fa        ;WORD string pointer
 
-        ;; Routines
-        ;; --------
+        ;; Public Routines
+        ;; ---------------
 
         ;; Routine to set first block and page from user input.
         ;; Call from BASIC via:
@@ -118,26 +125,24 @@ strptr:         .ezp $fa        ;WORD string pointer
 setfirst:
         jsr getwrd
         lda linnum+1
-        bne iqerr
+        jne illqua
         lda linnum
         cmp #MAX_BLOCK
-        bcs iqerr
+        jcs illqua
         sta firstblock
         jsr comma
         jsr getwrd
         lda linnum+1
-        bne iqerr
+        jne illqua
         lda linnum
         cmp #MAX_PAGE
-        bcs iqerr
+        jcs illqua
         sta firstpage
         rts
-iqerr:  jmp illqua
         
         ;; Routine to write object code to GEOram.
         ;; Call from Profi-Ass via:
-        ;;     .OPT P,O=$CC30
-        .align 4
+        ;;     .OPT P,O=$CC2E
 write:  lda pa_len
         cmp #PA_STOP
         beq finwrt
@@ -160,18 +165,8 @@ wrchln: cpy pa_len
         jmp wrout1
 wrnxpg: ldx #0
         stx offset
-        inc curpage
-        lda curpage
-        cmp #MAX_PAGE
-        beq wrnxbk              ;past page 63? next block!
-        sta geopage
-        jmp wrchln
-wrnxbk: sta geopage
-        inc curblock
-        lda curblock
-        cmp #MAX_BLOCK          ;past page 31? out of memory!
-        beq enomem
-        sta geoblock
+        jsr nxpgbl
+        jcs enomem
         jmp wrchln
 wrstrt: jsr init
         ldx offset
@@ -196,16 +191,10 @@ finwrt: lda firstblock
         sta georam+1
         jsr print_wrtmsg
         rts
-enomem: jsr newline
-        lda #<oommsg
-        ldy #>oommsg
-        jsr strout
-        rts
 
         ;; Routine to read object code from GEOram.
         ;; Call from BASIC via:
-        ;;     SYS52416
-        .align 4
+        ;;     SYS52376
 read:   jsr read_header
         inx
         ldy #0
@@ -224,18 +213,8 @@ rdchpg: inx
 incadr: inc c64addr+1
         jmp rdchpg
 rdnxpg: ldx #0
-        inc curpage
-        lda curpage
-        cmp #MAX_PAGE
-        beq rdnxbk              ;past page 63? next block!
-        sta geopage
-        jmp rdloop
-rdnxbk: sta geopage
-        inc curblock
-        lda curblock
-        cmp #MAX_BLOCK          ;past block 31? out of memory!
-        beq enomem
-        sta geoblock
+        jsr nxpgbl
+        jcs enomem
         jmp rdloop
 rdfin:  jsr read_header
         jsr print_rdmsg
@@ -243,13 +222,12 @@ rdfin:  jsr read_header
 
         ;; Routine to load PRG file from disk to GEOram.
         ;; Call from BASIC via:
-        ;;     SYS(52496) filename, device #
+        ;;     SYS(52432) filename, device #
         ;; 
-        ;; E.g. SYS(52496) "PROFI-MON V2.0",8
-        .align 4
+        ;; E.g. SYS(52432) "PROFI-ASS 64 V2.0",8
 ldprg:  jsr getstr              ;read string from BASIC
         lda strlen
-        jeq ldfin               ;short circuit exit if strlen == 0
+        beq ldfin               ;short circuit exit if strlen == 0
         jsr cpyfnm              ;copy string to filename buffer
         jsr comma
         jsr getwrd
@@ -287,26 +265,9 @@ ldloop: jsr chrin
         inx
         beq ldnxpg              ;overflow? next page!
         jmp ldloop
-ldnxpg: inc curpage
-        lda curpage
-        cmp #MAX_PAGE
-        beq ldnxbl
-        sta geopage
+ldnxpg: jsr nxpgbl
+        bcs enomem
         jmp ldloop
-ldnxbl: ldx #0
-        stx curpage
-        stx geopage
-        inc curblock
-        lda curblock
-        cmp #MAX_BLOCK          ;past page 31? out of memory!
-        beq ldnomem
-        sta geoblock
-        jmp ldloop
-ldnomem:
-        jsr newline
-        lda #<oommsg
-        ldy #>oommsg
-        jsr strout
 ldfin:  lda #1
         jsr close               ;close file in A
         jsr clrchn              ;clear channels, restore default devices
@@ -322,6 +283,34 @@ ldfin:  lda #1
         lda datalen+1
         sta georam+1
         jsr print_wrtmsg
+        rts
+
+        ;; Private Routines
+        ;; ----------------
+
+        ;; Routine to display "out of memory" error message
+enomem: jsr newline
+        lda #<oommsg
+        ldy #>oommsg
+        jsr strout
+        rts
+
+        ;; Routine to increment curpage & geopage
+        ;; as well as curblock & geoblock, if necessary
+nxpgbl: inc curpage
+        lda curpage
+        cmp #MAX_PAGE
+        bne setpag
+        inc curblock
+        lda curblock
+        cmp #MAX_BLOCK
+        bcs oomem
+        sta geoblock
+setpag: lda curpage
+        sta geopage
+        clc
+        rts
+oomem:  sec
         rts
         
         ;; Routine to initialize GEOram registers & working memory

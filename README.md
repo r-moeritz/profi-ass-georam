@@ -19,7 +19,7 @@ workflow similar to the following:
 9. Go to step 2.
 
 This plugin has been designed to work hand-in-hand with both Profi-Ass
-and Profi-Mon and sits in RAM from $CC00 to $CEFF. That means you can
+and Profi-Mon and sits in RAM from $CC00 to $CEBF. That means you can
 have all 3 programs loaded without issue.
 
 I've included cracked copies of both Profi-Ass and Profi-Mon, as well
@@ -34,15 +34,15 @@ Set GEOram starting block to 0, page 1:
 
 Assemble to GEOram:
 
-    .OPT P,O=$CC30
+    .OPT P,O=$CC2E
 
 Read object code from GEOram to C64 memory:
 
-    SYS52416
+    SYS52376
 
 Load PRG file from disk device #8 to GEOram:
 
-    SYS(52496) "PROFI-MON V2.0",8
+    SYS(52432) "PROFI-ASS 64 V2.0",8
 
 Copying
 ---
