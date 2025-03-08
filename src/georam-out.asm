@@ -166,9 +166,7 @@ wrnxpg: ldx #0
         beq wrnxbk              ;past page 63? next block!
         sta geopage
         jmp wrchln
-wrnxbk: lda #0
-        sta curpage
-        sta geopage
+wrnxbk: sta geopage
         inc curblock
         lda curblock
         cmp #MAX_BLOCK          ;past page 31? out of memory!
@@ -232,9 +230,7 @@ rdnxpg: ldx #0
         beq rdnxbk              ;past page 63? next block!
         sta geopage
         jmp rdloop
-rdnxbk: lda #0
-        sta curpage
-        sta geopage
+rdnxbk: sta geopage
         inc curblock
         lda curblock
         cmp #MAX_BLOCK          ;past block 31? out of memory!
@@ -291,8 +287,7 @@ ldloop: jsr chrin
         inx
         beq ldnxpg              ;overflow? next page!
         jmp ldloop
-ldnxpg: ldx #0
-        inc curpage
+ldnxpg: inc curpage
         lda curpage
         cmp #MAX_PAGE
         beq ldnxbl
