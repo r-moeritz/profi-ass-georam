@@ -306,8 +306,8 @@ nxpgbl: inc curpage
         cmp #MAX_BLOCK
         bcs oomem
         sta geoblock
-setpag: lda curpage
-        sta geopage
+        lda #0
+setpag: sta geopage
         clc
         rts
 oomem:  sec
