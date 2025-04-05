@@ -35,7 +35,7 @@
         ;;
         ;; Load PRG file "PROFI-ASS 64 V2.0" from disk device #8 to GEOram:
         ;; 
-        ;;     SYS(52432) "PROFI-ASS 64 V2.0",8
+        ;;     SYS(52432) "PROFI-ASS-64-V2",8
 
         ;; Macros
         ;; ------

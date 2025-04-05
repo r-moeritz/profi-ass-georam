@@ -25,8 +25,17 @@ have all 3 programs loaded without issue.
 I've included cracked copies of both Profi-Ass and Profi-Mon, as well
 as a manual in German.
 
+Building
+---
+
+    make
+
 Usage
 ---
+
+First load the routines:
+
+    LOAD"GEORAM-ROUTINES",8,1
 
 Set GEOram starting block to 0, page 1:
 
@@ -42,7 +51,7 @@ Read object code from GEOram to C64 memory:
 
 Load PRG file from disk device #8 to GEOram:
 
-    SYS(52432) "PROFI-ASS 64 V2.0",8
+    SYS(52432) "PROFI-ASS-64-V2",8
 
 Copying
 ---
